@@ -1,0 +1,1741 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام تسجيل الحضور والغياب</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+        
+        * {
+            font-family: 'Tajawal', sans-serif;
+        }
+        
+        .dark-gradient {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+        
+        .light-gradient {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+        }
+        
+        .shadow-custom {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        
+        .dark .shadow-custom {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.12);
+        }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .dark ::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #5D5CDE;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b4bb3;
+        }
+        
+        .loader {
+            border-top-color: #5D5CDE;
+            animation: spinner 1.5s linear infinite;
+        }
+        
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            DEFAULT: '#5D5CDE',
+                            dark: '#4b4bb3',
+                            light: '#7e7ee6',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen transition-colors duration-300 light-gradient dark:dark-gradient">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 dark:text-white">نظام تسجيل الحضور والغياب</h1>
+            <button id="themeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white">
+                <i class="fas fa-moon dark:hidden"></i>
+                <i class="fas fa-sun hidden dark:block"></i>
+            </button>
+        </div>
+        
+        <!-- التنقل -->
+        <div class="mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-custom overflow-hidden">
+            <div class="flex flex-col md:flex-row">
+                <button data-view="dashboard" class="nav-btn py-3 px-4 text-primary border-b md:border-b-0 md:border-l border-gray-200 dark:border-gray-700 font-medium">
+                    <i class="fas fa-home ml-2"></i>لوحة التحكم
+                </button>
+                <button data-view="employees" class="nav-btn py-3 px-4 text-gray-600 dark:text-gray-300 border-b md:border-b-0 md:border-l border-gray-200 dark:border-gray-700 font-medium">
+                    <i class="fas fa-users ml-2"></i>الموظفين
+                </button>
+                <button data-view="attendance" class="nav-btn py-3 px-4 text-gray-600 dark:text-gray-300 border-b md:border-b-0 md:border-l border-gray-200 dark:border-gray-700 font-medium">
+                    <i class="fas fa-clipboard-check ml-2"></i>الحضور والغياب
+                </button>
+                <button data-view="reports" class="nav-btn py-3 px-4 text-gray-600 dark:text-gray-300 font-medium">
+                    <i class="fas fa-chart-bar ml-2"></i>التقارير
+                </button>
+            </div>
+        </div>
+        
+        <!-- المحتوى -->
+        <div id="viewContainer" class="mb-8">
+            <!-- لوحة التحكم -->
+            <div id="dashboard" class="view-content">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-custom">
+                        <div class="flex items-center">
+                            <div class="bg-primary/10 p-3 rounded-full">
+                                <i class="fas fa-users text-primary text-xl"></i>
+                            </div>
+                            <div class="mr-4">
+                                <p class="text-gray-500 dark:text-gray-400 text-sm">عدد الموظفين</p>
+                                <h3 id="employeesCount" class="text-2xl font-bold text-gray-800 dark:text-white">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-custom">
+                        <div class="flex items-center">
+                            <div class="bg-green-100 dark:bg-green-900/30 p-3 rounded-full">
+                                <i class="fas fa-user-check text-green-600 dark:text-green-400 text-xl"></i>
+                            </div>
+                            <div class="mr-4">
+                                <p class="text-gray-500 dark:text-gray-400 text-sm">الحضور اليوم</p>
+                                <h3 id="presentCount" class="text-2xl font-bold text-gray-800 dark:text-white">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-custom">
+                        <div class="flex items-center">
+                            <div class="bg-red-100 dark:bg-red-900/30 p-3 rounded-full">
+                                <i class="fas fa-user-times text-red-600 dark:text-red-400 text-xl"></i>
+                            </div>
+                            <div class="mr-4">
+                                <p class="text-gray-500 dark:text-gray-400 text-sm">الغياب اليوم</p>
+                                <h3 id="absentCount" class="text-2xl font-bold text-gray-800 dark:text-white">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-custom">
+                        <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-4">الحضور الأخير</h3>
+                        <div id="recentAttendance" class="overflow-y-auto max-h-60">
+                            <div class="text-center text-gray-500 dark:text-gray-400 py-4">لا يوجد سجلات حضور حديثة</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-custom">
+                        <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-4">البيانات</h3>
+                        <div class="space-y-3">
+                            <p class="text-gray-600 dark:text-gray-300">قم بتصدير واستيراد البيانات</p>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <button id="importEmployeesBtn" class="flex items-center justify-center px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors w-full sm:w-auto">
+                                    <i class="fas fa-file-import ml-2"></i>
+                                    استيراد موظفين
+                                </button>
+                                <button id="exportEmployeesBtn" class="flex items-center justify-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors w-full sm:w-auto">
+                                    <i class="fas fa-file-export ml-2"></i>
+                                    تصدير موظفين
+                                </button>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-3 mt-3">
+                                <button id="importAttendanceBtn" class="flex items-center justify-center px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors w-full sm:w-auto">
+                                    <i class="fas fa-file-import ml-2"></i>
+                                    استيراد الحضور
+                                </button>
+                                <button id="exportAttendanceBtn" class="flex items-center justify-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors w-full sm:w-auto">
+                                    <i class="fas fa-file-export ml-2"></i>
+                                    تصدير الحضور
+                                </button>
+                            </div>
+                        </div>
+                        <input type="file" id="importFile" accept=".xlsx, .xls" class="hidden">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- الموظفين -->
+            <div id="employees" class="view-content hidden">
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-custom p-6 mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-4">إضافة موظف جديد</h2>
+                    <form id="employeeForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="empId" class="block text-gray-700 dark:text-gray-300 mb-2">الرقم الوظيفي</label>
+                            <input type="text" id="empId" required class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                        <div>
+                            <label for="empName" class="block text-gray-700 dark:text-gray-300 mb-2">الاسم</label>
+                            <input type="text" id="empName" required class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                        <div>
+                            <label for="empPhone" class="block text-gray-700 dark:text-gray-300 mb-2">رقم الهاتف</label>
+                            <input type="tel" id="empPhone" class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                        <div>
+                            <label for="empType" class="block text-gray-700 dark:text-gray-300 mb-2">النوع</label>
+                            <select id="empType" required class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="supervisor">مشرف/ة</option>
+                                <option value="driver">سائق/ة</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <button type="submit" class="w-full px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors text-base">
+                                <i class="fas fa-plus ml-2"></i>إضافة
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-custom overflow-hidden">
+                    <div class="p-4 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white">قائمة الموظفين</h2>
+                        <div class="flex w-full md:w-auto gap-2">
+                            <select id="employeeTypeFilter" class="px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="all">الكل</option>
+                                <option value="supervisor">المشرفين</option>
+                                <option value="driver">السائقين</option>
+                            </select>
+                            <input type="text" id="employeeSearch" placeholder="بحث..." class="px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary flex-grow md:flex-grow-0">
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead class="bg-gray-50 dark:bg-gray-900/50">
+                                <tr>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الرقم الوظيفي</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الاسم</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">رقم الهاتف</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">النوع</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="employeesList" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                <!-- سيتم إضافة الموظفين هنا -->
+                                <tr>
+                                    <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                                        لا يوجد موظفين
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- الحضور والغياب -->
+            <div id="attendance" class="view-content hidden">
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-custom p-6 mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-4">تسجيل الحضور والغياب</h2>
+                    <form id="attendanceForm" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label for="attendanceDate" class="block text-gray-700 dark:text-gray-300 mb-2">التاريخ</label>
+                            <input type="date" id="attendanceDate" required class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                        <div>
+                            <label for="attendanceEmployee" class="block text-gray-700 dark:text-gray-300 mb-2">الموظف</label>
+                            <select id="attendanceEmployee" required class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="">-- اختر الموظف --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="attendanceStatus" class="block text-gray-700 dark:text-gray-300 mb-2">الحالة</label>
+                            <select id="attendanceStatus" required class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="present">حاضر</option>
+                                <option value="absent">غائب</option>
+                                <option value="late">متأخر</option>
+                                <option value="excused">غياب بعذر</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="attendanceNotes" class="block text-gray-700 dark:text-gray-300 mb-2">ملاحظات</label>
+                            <input type="text" id="attendanceNotes" class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                        <div>
+                            <button type="submit" class="w-full h-full px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors text-base">
+                                <i class="fas fa-save ml-2"></i>حفظ
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-custom overflow-hidden">
+                    <div class="p-4 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white">سجل الحضور والغياب</h2>
+                        <div class="flex w-full md:w-auto gap-2">
+                            <input type="date" id="attendanceFilterDate" class="px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                            <select id="attendanceFilterStatus" class="px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="all">كل الحالات</option>
+                                <option value="present">حاضر</option>
+                                <option value="absent">غائب</option>
+                                <option value="late">متأخر</option>
+                                <option value="excused">غياب بعذر</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead class="bg-gray-50 dark:bg-gray-900/50">
+                                <tr>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">التاريخ</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الموظف</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">النوع</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الحالة</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">ملاحظات</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendanceList" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                <!-- سيتم إضافة سجلات الحضور هنا -->
+                                <tr>
+                                    <td colspan="6" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                                        لا يوجد سجلات
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- التقارير -->
+            <div id="reports" class="view-content hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-custom p-6">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-4">تقرير الحضور والغياب</h2>
+                        <div class="mb-4">
+                            <label class="block text-gray-700 dark:text-gray-300 mb-2">الفترة</label>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="reportStartDate" class="block text-gray-700 dark:text-gray-300 mb-2">من</label>
+                                    <input type="date" id="reportStartDate" class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                </div>
+                                <div>
+                                    <label for="reportEndDate" class="block text-gray-700 dark:text-gray-300 mb-2">إلى</label>
+                                    <input type="date" id="reportEndDate" class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="reportEmployeeType" class="block text-gray-700 dark:text-gray-300 mb-2">نوع الموظف</label>
+                            <select id="reportEmployeeType" class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="all">الكل</option>
+                                <option value="supervisor">المشرفين</option>
+                                <option value="driver">السائقين</option>
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label for="reportEmployee" class="block text-gray-700 dark:text-gray-300 mb-2">الموظف (اختياري)</label>
+                            <select id="reportEmployee" class="w-full px-4 py-2 text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="all">كل الموظفين</option>
+                            </select>
+                        </div>
+                        <button id="generateReportBtn" class="w-full px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors text-base">
+                            <i class="fas fa-file-alt ml-2"></i>إنشاء التقرير
+                        </button>
+                    </div>
+                    
+                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-custom p-6">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-4">إحصائيات</h2>
+                        <div id="reportStats" class="space-y-6">
+                            <div class="text-center text-gray-500 dark:text-gray-400 py-4">
+                                قم بإنشاء تقرير لعرض الإحصائيات
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow-custom overflow-hidden">
+                    <div class="p-4 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white">نتائج التقرير</h2>
+                        <button id="exportReportBtn" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors">
+                            <i class="fas fa-file-export ml-2"></i>تصدير التقرير
+                        </button>
+                    </div>
+                    
+                    <div id="reportResults" class="p-4">
+                        <div class="text-center text-gray-500 dark:text-gray-400 py-4">
+                            لا يوجد نتائج للعرض
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- إشعارات -->
+    <div id="notifications" class="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2"></div>
+    
+    <!-- تحميل -->
+    <div id="loading" class="fixed top-0 left-0 w-full h-full bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col items-center">
+            <div class="loader w-10 h-10 border-4 border-gray-300 dark:border-gray-600 rounded-full mb-4"></div>
+            <p id="loadingText" class="text-gray-800 dark:text-white">جاري التحميل...</p>
+        </div>
+    </div>
+    
+    <script>
+        // التحقق من الوضع المظلم
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+        
+        // تاريخ اليوم
+        const today = new Date();
+        const formattedDate = today.toISOString().split('T')[0];
+        
+        // تهيئة Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCE8kh_SjHvWIZF0rr4DHENcCZkoACWp3s",
+            authDomain: "door-2e7cb.firebaseapp.com",
+            databaseURL: "https://door-2e7cb-default-rtdb.firebaseio.com",
+            projectId: "door-2e7cb",
+            storageBucket: "door-2e7cb.firebasestorage.app",
+            messagingSenderId: "839869504982",
+            appId: "1:839869504982:web:237a2ced646e5b40d79877",
+            measurementId: "G-84R59W01RD"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        // تهيئة قاعدة البيانات
+        const db = {
+            employees: [],
+            attendance: [],
+            
+            async init() {
+                showLoading('جاري تحميل البيانات...');
+                try {
+                    // تحميل بيانات الموظفين
+                    const employeesSnapshot = await database.ref('employees').once('value');
+                    const employeesData = employeesSnapshot.val() || {};
+                    this.employees = Object.values(employeesData);
+                    
+                    // تحميل بيانات الحضور
+                    const attendanceSnapshot = await database.ref('attendance').once('value');
+                    const attendanceData = attendanceSnapshot.val() || {};
+                    this.attendance = Object.values(attendanceData);
+                    
+                    // ترتيب البيانات بناءً على التاريخ
+                    this.attendance.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    
+                    hideLoading();
+                    return true;
+                } catch (error) {
+                    console.error("خطأ في تحميل البيانات:", error);
+                    hideLoading();
+                    showNotification("حدث خطأ أثناء تحميل البيانات، يرجى المحاولة مرة أخرى", "error");
+                    return false;
+                }
+            },
+            
+            async addEmployee(employee) {
+                if (!employee.id || !employee.name || !employee.type) {
+                    throw new Error('بيانات الموظف غير مكتملة');
+                }
+                
+                const existingEmployee = this.employees.find(emp => emp.id === employee.id);
+                if (existingEmployee) {
+                    throw new Error('الرقم الوظيفي موجود بالفعل');
+                }
+                
+                try {
+                    // إضافة معرف فريد للموظف
+                    const employeeKey = database.ref('employees').push().key;
+                    employee.key = employeeKey;
+                    
+                    // حفظ الموظف في Firebase
+                    await database.ref('employees/' + employeeKey).set(employee);
+                    
+                    // إضافة الموظف للقائمة المحلية
+                    this.employees.push(employee);
+                    return employee;
+                } catch (error) {
+                    console.error("خطأ في إضافة الموظف:", error);
+                    throw new Error('حدث خطأ أثناء حفظ بيانات الموظف');
+                }
+            },
+            
+            async updateEmployee(id, updates) {
+                const index = this.employees.findIndex(emp => emp.id === id);
+                if (index === -1) {
+                    throw new Error('الموظف غير موجود');
+                }
+                
+                const employee = this.employees[index];
+                const updatedEmployee = { ...employee, ...updates };
+                
+                try {
+                    // تحديث بيانات الموظف في Firebase
+                    await database.ref('employees/' + employee.key).update(updates);
+                    
+                    // تحديث البيانات المحلية
+                    this.employees[index] = updatedEmployee;
+                    return updatedEmployee;
+                } catch (error) {
+                    console.error("خطأ في تحديث الموظف:", error);
+                    throw new Error('حدث خطأ أثناء تحديث بيانات الموظف');
+                }
+            },
+            
+            async deleteEmployee(id) {
+                const index = this.employees.findIndex(emp => emp.id === id);
+                if (index === -1) {
+                    throw new Error('الموظف غير موجود');
+                }
+                
+                const employee = this.employees[index];
+                
+                try {
+                    // حذف الموظف من Firebase
+                    await database.ref('employees/' + employee.key).remove();
+                    
+                    // حذف سجلات الحضور المرتبطة بالموظف
+                    const recordsToDelete = this.attendance.filter(record => record.employeeId === id);
+                    for (const record of recordsToDelete) {
+                        await database.ref('attendance/' + record.key).remove();
+                    }
+                    
+                    // تحديث البيانات المحلية
+                    this.employees.splice(index, 1);
+                    this.attendance = this.attendance.filter(record => record.employeeId !== id);
+                    
+                    return employee;
+                } catch (error) {
+                    console.error("خطأ في حذف الموظف:", error);
+                    throw new Error('حدث خطأ أثناء حذف الموظف');
+                }
+            },
+            
+            async addAttendance(record) {
+                if (!record.date || !record.employeeId || !record.status) {
+                    throw new Error('بيانات الحضور غير مكتملة');
+                }
+                
+                // التحقق من وجود الموظف
+                const employee = this.employees.find(emp => emp.id === record.employeeId);
+                if (!employee) {
+                    throw new Error('الموظف غير موجود');
+                }
+                
+                // التحقق من عدم وجود سجل بنفس التاريخ للموظف
+                const existingRecord = this.attendance.find(
+                    rec => rec.date === record.date && rec.employeeId === record.employeeId
+                );
+                
+                try {
+                    if (existingRecord) {
+                        // تحديث السجل الموجود
+                        const updates = {
+                            status: record.status,
+                            notes: record.notes
+                        };
+                        
+                        // تحديث السجل في Firebase
+                        await database.ref('attendance/' + existingRecord.key).update(updates);
+                        
+                        // تحديث البيانات المحلية
+                        Object.assign(existingRecord, updates);
+                        return existingRecord;
+                    } else {
+                        // إنشاء معرف فريد للسجل
+                        const recordKey = database.ref('attendance').push().key;
+                        const newRecord = {
+                            key: recordKey,
+                            id: Date.now().toString(), // للتوافق مع الكود القديم
+                            ...record
+                        };
+                        
+                        // حفظ السجل في Firebase
+                        await database.ref('attendance/' + recordKey).set(newRecord);
+                        
+                        // إضافة السجل للقائمة المحلية
+                        this.attendance.push(newRecord);
+                        
+                        // إعادة ترتيب البيانات
+                        this.attendance.sort((a, b) => new Date(b.date) - new Date(a.date));
+                        
+                        return newRecord;
+                    }
+                } catch (error) {
+                    console.error("خطأ في إضافة/تحديث سجل الحضور:", error);
+                    throw new Error('حدث خطأ أثناء حفظ سجل الحضور');
+                }
+            },
+            
+            async updateAttendance(id, updates) {
+                const index = this.attendance.findIndex(rec => rec.id === id);
+                if (index === -1) {
+                    throw new Error('سجل الحضور غير موجود');
+                }
+                
+                const record = this.attendance[index];
+                
+                try {
+                    // تحديث السجل في Firebase
+                    await database.ref('attendance/' + record.key).update(updates);
+                    
+                    // تحديث البيانات المحلية
+                    this.attendance[index] = { ...record, ...updates };
+                    
+                    return this.attendance[index];
+                } catch (error) {
+                    console.error("خطأ في تحديث سجل الحضور:", error);
+                    throw new Error('حدث خطأ أثناء تحديث سجل الحضور');
+                }
+            },
+            
+            async deleteAttendance(id) {
+                const index = this.attendance.findIndex(rec => rec.id === id);
+                if (index === -1) {
+                    throw new Error('سجل الحضور غير موجود');
+                }
+                
+                const record = this.attendance[index];
+                
+                try {
+                    // حذف السجل من Firebase
+                    await database.ref('attendance/' + record.key).remove();
+                    
+                    // حذف السجل من البيانات المحلية
+                    this.attendance.splice(index, 1);
+                    
+                    return record;
+                } catch (error) {
+                    console.error("خطأ في حذف سجل الحضور:", error);
+                    throw new Error('حدث خطأ أثناء حذف سجل الحضور');
+                }
+            },
+            
+            getFilteredEmployees(filter = {}) {
+                let filtered = [...this.employees];
+                
+                if (filter.type && filter.type !== 'all') {
+                    filtered = filtered.filter(emp => emp.type === filter.type);
+                }
+                
+                if (filter.search) {
+                    const search = filter.search.toLowerCase();
+                    filtered = filtered.filter(emp => 
+                        emp.id.toLowerCase().includes(search) || 
+                        emp.name.toLowerCase().includes(search) ||
+                        (emp.phone && emp.phone.includes(search))
+                    );
+                }
+                
+                return filtered;
+            },
+            
+            getFilteredAttendance(filter = {}) {
+                let filtered = [...this.attendance];
+                
+                if (filter.date) {
+                    filtered = filtered.filter(rec => rec.date === filter.date);
+                }
+                
+                if (filter.status && filter.status !== 'all') {
+                    filtered = filtered.filter(rec => rec.status === filter.status);
+                }
+                
+                if (filter.employeeId && filter.employeeId !== 'all') {
+                    filtered = filtered.filter(rec => rec.employeeId === filter.employeeId);
+                }
+                
+                if (filter.employeeType && filter.employeeType !== 'all') {
+                    filtered = filtered.filter(rec => {
+                        const employee = this.employees.find(emp => emp.id === rec.employeeId);
+                        return employee && employee.type === filter.employeeType;
+                    });
+                }
+                
+                if (filter.startDate) {
+                    filtered = filtered.filter(rec => rec.date >= filter.startDate);
+                }
+                
+                if (filter.endDate) {
+                    filtered = filtered.filter(rec => rec.date <= filter.endDate);
+                }
+                
+                return filtered;
+            },
+            
+            getDashboardStats(date = formattedDate) {
+                const todayRecords = this.attendance.filter(rec => rec.date === date);
+                const presentCount = todayRecords.filter(rec => rec.status === 'present').length;
+                const absentCount = todayRecords.filter(rec => rec.status === 'absent' || rec.status === 'excused').length;
+                
+                return {
+                    employeesCount: this.employees.length,
+                    presentCount,
+                    absentCount
+                };
+            },
+            
+            getRecentAttendance(limit = 5) {
+                return this.attendance
+                    .slice(0, limit);  // البيانات مرتبة بالفعل في init()
+            },
+            
+            getAttendanceStats(filter = {}) {
+                const records = this.getFilteredAttendance(filter);
+                
+                const total = records.length;
+                const present = records.filter(rec => rec.status === 'present').length;
+                const absent = records.filter(rec => rec.status === 'absent').length;
+                const late = records.filter(rec => rec.status === 'late').length;
+                const excused = records.filter(rec => rec.status === 'excused').length;
+                
+                return {
+                    total,
+                    present,
+                    absent,
+                    late,
+                    excused,
+                    presentPercent: total ? Math.round((present / total) * 100) : 0,
+                    absentPercent: total ? Math.round((absent / total) * 100) : 0,
+                    latePercent: total ? Math.round((late / total) * 100) : 0,
+                    excusedPercent: total ? Math.round((excused / total) * 100) : 0
+                };
+            }
+        };
+        
+        // الوظائف المساعدة
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `py-2 px-4 rounded-lg text-white text-base flex items-center ${
+                type === 'success' ? 'bg-green-500' : 'bg-red-500'
+            } shadow-lg transition-all duration-300 opacity-0 transform translate-y-2`;
+            
+            const icon = document.createElement('i');
+            icon.className = `fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} ml-2`;
+            
+            const text = document.createElement('span');
+            text.textContent = message;
+            
+            notification.appendChild(icon);
+            notification.appendChild(text);
+            
+            document.getElementById('notifications').appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.remove('opacity-0', 'translate-y-2');
+            }, 10);
+            
+            setTimeout(() => {
+                notification.classList.add('opacity-0', 'translate-y-2');
+                
+                setTimeout(() => {
+                    notification.remove();
+                }, 300);
+            }, 3000);
+        }
+        
+        function showLoading(text = 'جاري التحميل...') {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loading').classList.remove('hidden');
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+        
+        function getStatusText(status) {
+            switch (status) {
+                case 'present': return 'حاضر';
+                case 'absent': return 'غائب';
+                case 'late': return 'متأخر';
+                case 'excused': return 'غياب بعذر';
+                default: return status;
+            }
+        }
+        
+        function getStatusClass(status) {
+            switch (status) {
+                case 'present': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
+                case 'absent': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
+                case 'late': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400';
+                case 'excused': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
+                default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+            }
+        }
+        
+        function getTypeText(type) {
+            switch (type) {
+                case 'supervisor': return 'مشرف/ة';
+                case 'driver': return 'سائق/ة';
+                default: return type;
+            }
+        }
+        
+        function exportToExcel(data, fileName) {
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+            XLSX.writeFile(workbook, `${fileName}.xlsx`);
+        }
+        
+        // تحديث العناصر
+        function updateEmployeeSelect() {
+            const attendanceEmployee = document.getElementById('attendanceEmployee');
+            const reportEmployee = document.getElementById('reportEmployee');
+            
+            // حفظ القيم الحالية
+            const attendanceValue = attendanceEmployee.value;
+            const reportValue = reportEmployee.value;
+            
+            // تفريغ العناصر
+            attendanceEmployee.innerHTML = '<option value="">-- اختر الموظف --</option>';
+            reportEmployee.innerHTML = '<option value="all">كل الموظفين</option>';
+            
+            // إضافة الموظفين
+            db.employees.forEach(employee => {
+                const optionAttendance = document.createElement('option');
+                optionAttendance.value = employee.id;
+                optionAttendance.textContent = `${employee.name} (${getTypeText(employee.type)})`;
+                attendanceEmployee.appendChild(optionAttendance);
+                
+                const optionReport = document.createElement('option');
+                optionReport.value = employee.id;
+                optionReport.textContent = `${employee.name} (${getTypeText(employee.type)})`;
+                reportEmployee.appendChild(optionReport);
+            });
+            
+            // استعادة القيم
+            if (attendanceValue) {
+                attendanceEmployee.value = attendanceValue;
+            }
+            
+            if (reportValue) {
+                reportEmployee.value = reportValue;
+            }
+        }
+        
+        function updateEmployeesList() {
+            const employeesList = document.getElementById('employeesList');
+            const filter = {
+                type: document.getElementById('employeeTypeFilter').value,
+                search: document.getElementById('employeeSearch').value
+            };
+            
+            const employees = db.getFilteredEmployees(filter);
+            
+            if (employees.length === 0) {
+                employeesList.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                            لا يوجد موظفين
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            employeesList.innerHTML = '';
+            
+            employees.forEach(employee => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 dark:hover:bg-gray-700/50';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${employee.id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${employee.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${employee.phone || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${getTypeText(employee.type)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                        <button data-action="edit" data-id="${employee.id}" class="text-primary hover:text-primary-dark mr-2">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button data-action="delete" data-id="${employee.id}" class="text-red-500 hover:text-red-700">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                `;
+                
+                employeesList.appendChild(row);
+            });
+            
+            // إضافة مستمعي الأحداث للأزرار
+            employeesList.querySelectorAll('[data-action="edit"]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.getAttribute('data-id');
+                    const employee = db.employees.find(emp => emp.id === id);
+                    
+                    if (employee) {
+                        document.getElementById('empId').value = employee.id;
+                        document.getElementById('empId').readOnly = true;
+                        document.getElementById('empName').value = employee.name;
+                        document.getElementById('empPhone').value = employee.phone || '';
+                        document.getElementById('empType').value = employee.type;
+                        
+                        // تغيير زر الإضافة إلى تحديث
+                        const submitBtn = document.querySelector('#employeeForm button[type="submit"]');
+                        submitBtn.innerHTML = '<i class="fas fa-save ml-2"></i>تحديث';
+                        submitBtn.classList.add('update-mode');
+                        
+                        // التمرير إلى النموذج
+                        document.getElementById('employeeForm').scrollIntoView({ behavior: 'smooth' });
+                    }
+                });
+            });
+            
+            employeesList.querySelectorAll('[data-action="delete"]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const id = btn.getAttribute('data-id');
+                    const employee = db.employees.find(emp => emp.id === id);
+                    
+                    if (confirm(`هل أنت متأكد من حذف الموظف ${employee.name}؟`)) {
+                        try {
+                            showLoading('جاري حذف الموظف...');
+                            await db.deleteEmployee(id);
+                            hideLoading();
+                            showNotification('تم حذف الموظف بنجاح');
+                            updateEmployeesList();
+                            updateEmployeeSelect();
+                            updateAttendanceList();
+                            updateDashboard();
+                        } catch (err) {
+                            hideLoading();
+                            showNotification(err.message, 'error');
+                        }
+                    }
+                });
+            });
+        }
+        
+        function updateAttendanceList() {
+            const attendanceList = document.getElementById('attendanceList');
+            const filter = {
+                date: document.getElementById('attendanceFilterDate').value,
+                status: document.getElementById('attendanceFilterStatus').value
+            };
+            
+            const records = db.getFilteredAttendance(filter);
+            
+            if (records.length === 0) {
+                attendanceList.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                            لا يوجد سجلات
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            attendanceList.innerHTML = '';
+            
+            records.forEach(record => {
+                const employee = db.employees.find(emp => emp.id === record.employeeId);
+                if (!employee) return;
+                
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 dark:hover:bg-gray-700/50';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${record.date}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${employee.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${getTypeText(employee.type)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2 py-1 text-xs rounded-full ${getStatusClass(record.status)}">
+                            ${getStatusText(record.status)}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${record.notes || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                        <button data-action="edit-attendance" data-id="${record.id}" class="text-primary hover:text-primary-dark mr-2">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button data-action="delete-attendance" data-id="${record.id}" class="text-red-500 hover:text-red-700">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                `;
+                
+                attendanceList.appendChild(row);
+            });
+            
+            // إضافة مستمعي الأحداث للأزرار
+            attendanceList.querySelectorAll('[data-action="edit-attendance"]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.getAttribute('data-id');
+                    const record = db.attendance.find(rec => rec.id === id);
+                    
+                    if (record) {
+                        document.getElementById('attendanceDate').value = record.date;
+                        document.getElementById('attendanceEmployee').value = record.employeeId;
+                        document.getElementById('attendanceStatus').value = record.status;
+                        document.getElementById('attendanceNotes').value = record.notes || '';
+                        
+                        // تغيير زر الحفظ إلى تحديث
+                        const submitBtn = document.querySelector('#attendanceForm button[type="submit"]');
+                        submitBtn.innerHTML = '<i class="fas fa-save ml-2"></i>تحديث';
+                        submitBtn.classList.add('update-mode');
+                        submitBtn.setAttribute('data-id', id);
+                        
+                        // التمرير إلى النموذج
+                        document.getElementById('attendanceForm').scrollIntoView({ behavior: 'smooth' });
+                    }
+                });
+            });
+            
+            attendanceList.querySelectorAll('[data-action="delete-attendance"]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const id = btn.getAttribute('data-id');
+                    
+                    if (confirm('هل أنت متأكد من حذف سجل الحضور؟')) {
+                        try {
+                            showLoading('جاري حذف السجل...');
+                            await db.deleteAttendance(id);
+                            hideLoading();
+                            showNotification('تم حذف سجل الحضور بنجاح');
+                            updateAttendanceList();
+                            updateDashboard();
+                        } catch (err) {
+                            hideLoading();
+                            showNotification(err.message, 'error');
+                        }
+                    }
+                });
+            });
+        }
+        
+        function updateRecentAttendance() {
+            const container = document.getElementById('recentAttendance');
+            const records = db.getRecentAttendance();
+            
+            if (records.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-gray-500 dark:text-gray-400 py-4">
+                        لا يوجد سجلات حضور حديثة
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            records.forEach(record => {
+                const employee = db.employees.find(emp => emp.id === record.employeeId);
+                if (!employee) return;
+                
+                const item = document.createElement('div');
+                item.className = 'flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700';
+                
+                item.innerHTML = `
+                    <div>
+                        <p class="font-medium text-gray-800 dark:text-white">${employee.name}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">${record.date} - ${getTypeText(employee.type)}</p>
+                    </div>
+                    <span class="px-2 py-1 text-xs rounded-full ${getStatusClass(record.status)}">
+                        ${getStatusText(record.status)}
+                    </span>
+                `;
+                
+                container.appendChild(item);
+            });
+        }
+        
+        function updateDashboard() {
+            const stats = db.getDashboardStats();
+            
+            document.getElementById('employeesCount').textContent = stats.employeesCount;
+            document.getElementById('presentCount').textContent = stats.presentCount;
+            document.getElementById('absentCount').textContent = stats.absentCount;
+            
+            updateRecentAttendance();
+        }
+        
+        function generateReport() {
+            const startDate = document.getElementById('reportStartDate').value;
+            const endDate = document.getElementById('reportEndDate').value;
+            const employeeType = document.getElementById('reportEmployeeType').value;
+            const employeeId = document.getElementById('reportEmployee').value;
+            
+            if (!startDate || !endDate) {
+                showNotification('يرجى تحديد تاريخ البداية والنهاية', 'error');
+                return;
+            }
+            
+            const filter = {
+                startDate,
+                endDate,
+                employeeType: employeeType !== 'all' ? employeeType : null,
+                employeeId: employeeId !== 'all' ? employeeId : null
+            };
+            
+            // الإحصائيات
+            const stats = db.getAttendanceStats(filter);
+            const reportStats = document.getElementById('reportStats');
+            
+            reportStats.innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-green-100 dark:bg-green-900/30 p-4 rounded-lg text-center">
+                        <h4 class="text-green-600 dark:text-green-400 font-bold text-xl">${stats.presentPercent}%</h4>
+                        <p class="text-green-800 dark:text-green-500 text-sm">حضور</p>
+                        <p class="text-green-700 dark:text-green-400">${stats.present}</p>
+                    </div>
+                    <div class="bg-red-100 dark:bg-red-900/30 p-4 rounded-lg text-center">
+                        <h4 class="text-red-600 dark:text-red-400 font-bold text-xl">${stats.absentPercent}%</h4>
+                        <p class="text-red-800 dark:text-red-500 text-sm">غياب</p>
+                        <p class="text-red-700 dark:text-red-400">${stats.absent}</p>
+                    </div>
+                    <div class="bg-yellow-100 dark:bg-yellow-900/30 p-4 rounded-lg text-center">
+                        <h4 class="text-yellow-600 dark:text-yellow-400 font-bold text-xl">${stats.latePercent}%</h4>
+                        <p class="text-yellow-800 dark:text-yellow-500 text-sm">تأخير</p>
+                        <p class="text-yellow-700 dark:text-yellow-400">${stats.late}</p>
+                    </div>
+                    <div class="bg-blue-100 dark:bg-blue-900/30 p-4 rounded-lg text-center">
+                        <h4 class="text-blue-600 dark:text-blue-400 font-bold text-xl">${stats.excusedPercent}%</h4>
+                        <p class="text-blue-800 dark:text-blue-500 text-sm">غياب بعذر</p>
+                        <p class="text-blue-700 dark:text-blue-400">${stats.excused}</p>
+                    </div>
+                </div>
+                <div class="mt-4 p-4 bg-gray-100 dark:bg-gray-900/30 rounded-lg">
+                    <p class="text-gray-700 dark:text-gray-300 mb-2">
+                        <span class="font-bold">الفترة:</span> ${startDate} إلى ${endDate}
+                    </p>
+                    <p class="text-gray-700 dark:text-gray-300">
+                        <span class="font-bold">إجمالي السجلات:</span> ${stats.total}
+                    </p>
+                </div>
+            `;
+            
+            // البيانات التفصيلية
+            const reportResults = document.getElementById('reportResults');
+            const records = db.getFilteredAttendance(filter);
+            
+            if (records.length === 0) {
+                reportResults.innerHTML = `
+                    <div class="text-center text-gray-500 dark:text-gray-400 py-4">
+                        لا يوجد نتائج للعرض
+                    </div>
+                `;
+                return;
+            }
+            
+            reportResults.innerHTML = `
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead class="bg-gray-50 dark:bg-gray-900/50">
+                            <tr>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">التاريخ</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الموظف</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">النوع</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">الحالة</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">ملاحظات</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                            ${records.map(record => {
+                                const employee = db.employees.find(emp => emp.id === record.employeeId);
+                                if (!employee) return '';
+                                
+                                return `
+                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${record.date}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${employee.name}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${getTypeText(employee.type)}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                            <span class="px-2 py-1 text-xs rounded-full ${getStatusClass(record.status)}">
+                                                ${getStatusText(record.status)}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${record.notes || '-'}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        // إضافة بيانات تجريبية
+        async function addSampleData() {
+            if (db.employees.length === 0) {
+                try {
+                    showLoading('جاري إضافة بيانات تجريبية...');
+                    
+                    // إضافة موظفين تجريبيين
+                    await db.addEmployee({ id: '1001', name: 'أحمد محمد', phone: '0501234567', type: 'supervisor' });
+                    await db.addEmployee({ id: '1002', name: 'سارة أحمد', phone: '0509876543', type: 'supervisor' });
+                    await db.addEmployee({ id: '1003', name: 'محمد علي', phone: '0504567890', type: 'driver' });
+                    await db.addEmployee({ id: '1004', name: 'فاطمة سعيد', phone: '0502345678', type: 'driver' });
+                    
+                    // إضافة سجلات حضور لليوم
+                    await db.addAttendance({ date: formattedDate, employeeId: '1001', status: 'present', notes: '' });
+                    await db.addAttendance({ date: formattedDate, employeeId: '1002', status: 'present', notes: '' });
+                    await db.addAttendance({ date: formattedDate, employeeId: '1003', status: 'absent', notes: 'إجازة مرضية' });
+                    await db.addAttendance({ date: formattedDate, employeeId: '1004', status: 'late', notes: 'تأخير 30 دقيقة' });
+                    
+                    hideLoading();
+                    showNotification('تم إضافة بيانات تجريبية بنجاح');
+                } catch (err) {
+                    hideLoading();
+                    console.error('خطأ في إضافة البيانات التجريبية:', err);
+                    showNotification('حدث خطأ أثناء إضافة البيانات التجريبية', 'error');
+                }
+            }
+        }
+        
+        // إعداد مستمعي الأحداث
+        document.addEventListener('DOMContentLoaded', async () => {
+            showLoading('جاري تهيئة النظام...');
+            
+            // تهيئة قاعدة البيانات
+            await db.init();
+            
+            // إضافة بيانات تجريبية إذا كانت القاعدة فارغة
+            await addSampleData();
+            
+            // تعيين تاريخ اليوم
+            document.getElementById('attendanceDate').value = formattedDate;
+            document.getElementById('attendanceFilterDate').value = formattedDate;
+            
+            const currentMonth = new Date().getMonth();
+            const currentYear = new Date().getFullYear();
+            
+            // تعيين أول يوم في الشهر الحالي
+            const firstDay = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
+            document.getElementById('reportStartDate').value = firstDay;
+            
+            // تعيين آخر يوم في الشهر الحالي
+            const lastDay = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
+            document.getElementById('reportEndDate').value = lastDay;
+            
+            // تحديث العناصر
+            updateEmployeesList();
+            updateEmployeeSelect();
+            updateAttendanceList();
+            updateDashboard();
+            
+            hideLoading();
+            
+            // التبديل بين العرض المظلم والفاتح
+            document.getElementById('themeToggle').addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+            });
+            
+            // التنقل بين الصفحات
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // تحديد الزر النشط
+                    document.querySelectorAll('.nav-btn').forEach(b => {
+                        b.classList.remove('text-primary');
+                        b.classList.add('text-gray-600', 'dark:text-gray-300');
+                    });
+                    
+                    btn.classList.add('text-primary');
+                    btn.classList.remove('text-gray-600', 'dark:text-gray-300');
+                    
+                    // إظهار المحتوى المطلوب
+                    const view = btn.getAttribute('data-view');
+                    document.querySelectorAll('.view-content').forEach(content => {
+                        content.classList.add('hidden');
+                    });
+                    
+                    document.getElementById(view).classList.remove('hidden');
+                });
+            });
+            
+            // نموذج إضافة موظف
+            document.getElementById('employeeForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const id = document.getElementById('empId').value;
+                const name = document.getElementById('empName').value;
+                const phone = document.getElementById('empPhone').value;
+                const type = document.getElementById('empType').value;
+                
+                const submitBtn = document.querySelector('#employeeForm button[type="submit"]');
+                const isUpdateMode = submitBtn.classList.contains('update-mode');
+                
+                try {
+                    showLoading(isUpdateMode ? 'جاري تحديث بيانات الموظف...' : 'جاري إضافة الموظف...');
+                    
+                    if (isUpdateMode) {
+                        await db.updateEmployee(id, { name, phone, type });
+                        showNotification('تم تحديث بيانات الموظف بنجاح');
+                        
+                        // إعادة تعيين زر الإضافة
+                        submitBtn.innerHTML = '<i class="fas fa-plus ml-2"></i>إضافة';
+                        submitBtn.classList.remove('update-mode');
+                        document.getElementById('empId').readOnly = false;
+                    } else {
+                        await db.addEmployee({ id, name, phone, type });
+                        showNotification('تم إضافة الموظف بنجاح');
+                    }
+                    
+                    // إعادة تعيين النموذج
+                    document.getElementById('employeeForm').reset();
+                    
+                    // تحديث القوائم
+                    updateEmployeesList();
+                    updateEmployeeSelect();
+                    updateDashboard();
+                    
+                    hideLoading();
+                } catch (err) {
+                    hideLoading();
+                    showNotification(err.message, 'error');
+                }
+            });
+            
+            // نموذج تسجيل الحضور
+            document.getElementById('attendanceForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const date = document.getElementById('attendanceDate').value;
+                const employeeId = document.getElementById('attendanceEmployee').value;
+                const status = document.getElementById('attendanceStatus').value;
+                const notes = document.getElementById('attendanceNotes').value;
+                
+                const submitBtn = document.querySelector('#attendanceForm button[type="submit"]');
+                const isUpdateMode = submitBtn.classList.contains('update-mode');
+                
+                try {
+                    showLoading(isUpdateMode ? 'جاري تحديث سجل الحضور...' : 'جاري تسجيل الحضور...');
+                    
+                    if (isUpdateMode) {
+                        const id = submitBtn.getAttribute('data-id');
+                        await db.updateAttendance(id, { date, employeeId, status, notes });
+                        showNotification('تم تحديث سجل الحضور بنجاح');
+                        
+                        // إعادة تعيين زر الحفظ
+                        submitBtn.innerHTML = '<i class="fas fa-save ml-2"></i>حفظ';
+                        submitBtn.classList.remove('update-mode');
+                        submitBtn.removeAttribute('data-id');
+                    } else {
+                        await db.addAttendance({ date, employeeId, status, notes });
+                        showNotification('تم تسجيل الحضور بنجاح');
+                    }
+                    
+                    // إعادة تعيين النموذج
+                    document.getElementById('attendanceForm').reset();
+                    document.getElementById('attendanceDate').value = formattedDate;
+                    
+                    // تحديث القوائم
+                    updateAttendanceList();
+                    updateDashboard();
+                    
+                    hideLoading();
+                } catch (err) {
+                    hideLoading();
+                    showNotification(err.message, 'error');
+                }
+            });
+            
+            // مصفاة الموظفين
+            document.getElementById('employeeTypeFilter').addEventListener('change', updateEmployeesList);
+            document.getElementById('employeeSearch').addEventListener('input', updateEmployeesList);
+            
+            // مصفاة الحضور
+            document.getElementById('attendanceFilterDate').addEventListener('change', updateAttendanceList);
+            document.getElementById('attendanceFilterStatus').addEventListener('change', updateAttendanceList);
+            
+            // مصفاة التقارير
+            document.getElementById('reportEmployeeType').addEventListener('change', function() {
+                const type = this.value;
+                const reportEmployee = document.getElementById('reportEmployee');
+                
+                // حفظ القيمة الحالية
+                const currentValue = reportEmployee.value;
+                
+                // تفريغ العنصر
+                reportEmployee.innerHTML = '<option value="all">كل الموظفين</option>';
+                
+                // إضافة الموظفين حسب النوع
+                db.employees
+                    .filter(emp => type === 'all' || emp.type === type)
+                    .forEach(employee => {
+                        const option = document.createElement('option');
+                        option.value = employee.id;
+                        option.textContent = `${employee.name} (${getTypeText(employee.type)})`;
+                        reportEmployee.appendChild(option);
+                    });
+                
+                // استعادة القيمة إذا كانت موجودة
+                if (currentValue !== 'all' && reportEmployee.querySelector(`option[value="${currentValue}"]`)) {
+                    reportEmployee.value = currentValue;
+                }
+            });
+            
+            // إنشاء التقرير
+            document.getElementById('generateReportBtn').addEventListener('click', generateReport);
+            
+            // استيراد وتصدير الملفات
+            const importFile = document.getElementById('importFile');
+            
+            document.getElementById('importEmployeesBtn').addEventListener('click', () => {
+                importFile.onchange = async function(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    showLoading('جاري استيراد بيانات الموظفين...');
+                    
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const rows = XLSX.utils.sheet_to_json(firstSheet);
+                            
+                            let addedCount = 0;
+                            let updatedCount = 0;
+                            let errorCount = 0;
+                            
+                            for (const row of rows) {
+                                try {
+                                    // تحويل أسماء الحقول
+                                    const employee = {
+                                        id: row.id?.toString() || row.ID?.toString() || row['الرقم الوظيفي']?.toString(),
+                                        name: row.name || row.Name || row['الاسم'],
+                                        phone: row.phone?.toString() || row.Phone?.toString() || row['رقم الهاتف']?.toString(),
+                                        type: row.type || row.Type || row['النوع']
+                                    };
+                                    
+                                    // تحويل نوع الموظف إلى القيم المتوقعة
+                                    if (employee.type === 'مشرف' || employee.type === 'مشرفة' || employee.type === 'مشرف/ة') {
+                                        employee.type = 'supervisor';
+                                    } else if (employee.type === 'سائق' || employee.type === 'سائقة' || employee.type === 'سائق/ة') {
+                                        employee.type = 'driver';
+                                    }
+                                    
+                                    // التحقق من البيانات الإلزامية
+                                    if (!employee.id || !employee.name || !employee.type) {
+                                        errorCount++;
+                                        continue;
+                                    }
+                                    
+                                    // التحقق من وجود الموظف
+                                    const existingEmployee = db.employees.find(emp => emp.id === employee.id);
+                                    if (existingEmployee) {
+                                        await db.updateEmployee(employee.id, { 
+                                            name: employee.name, 
+                                            phone: employee.phone, 
+                                            type: employee.type 
+                                        });
+                                        updatedCount++;
+                                    } else {
+                                        await db.addEmployee(employee);
+                                        addedCount++;
+                                    }
+                                } catch (err) {
+                                    errorCount++;
+                                    console.error('خطأ في استيراد الموظف:', err);
+                                }
+                            }
+                            
+                            hideLoading();
+                            showNotification(`تم استيراد البيانات: ${addedCount} موظف جديد، ${updatedCount} موظف تم تحديثه، ${errorCount} خطأ`);
+                            
+                            // تحديث القوائم
+                            updateEmployeesList();
+                            updateEmployeeSelect();
+                            updateDashboard();
+                        } catch (err) {
+                            hideLoading();
+                            showNotification('حدث خطأ أثناء استيراد الملف', 'error');
+                            console.error('خطأ في استيراد الملف:', err);
+                        }
+                        
+                        // إعادة تعيين حقل الملف
+                        importFile.value = '';
+                    };
+                    
+                    reader.onerror = function() {
+                        hideLoading();
+                        showNotification('حدث خطأ أثناء قراءة الملف', 'error');
+                        importFile.value = '';
+                    };
+                    
+                    reader.readAsArrayBuffer(file);
+                };
+                
+                importFile.click();
+            });
+            
+            document.getElementById('exportEmployeesBtn').addEventListener('click', () => {
+                try {
+                    const employees = db.employees.map(emp => ({
+                        'الرقم الوظيفي': emp.id,
+                        'الاسم': emp.name,
+                        'رقم الهاتف': emp.phone || '',
+                        'النوع': emp.type === 'supervisor' ? 'مشرف/ة' : 'سائق/ة'
+                    }));
+                    
+                    exportToExcel(employees, 'قائمة_الموظفين');
+                    showNotification('تم تصدير بيانات الموظفين بنجاح');
+                } catch (err) {
+                    showNotification('حدث خطأ أثناء تصدير البيانات', 'error');
+                    console.error('خطأ في تصدير الموظفين:', err);
+                }
+            });
+            
+            document.getElementById('importAttendanceBtn').addEventListener('click', () => {
+                importFile.onchange = async function(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    showLoading('جاري استيراد سجلات الحضور...');
+                    
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const rows = XLSX.utils.sheet_to_json(firstSheet);
+                            
+                            let addedCount = 0;
+                            let updatedCount = 0;
+                            let errorCount = 0;
+                            
+                            for (const row of rows) {
+                                try {
+                                    // تحويل أسماء الحقول
+                                    let date = row.date || row.Date || row['التاريخ'];
+                                    const employeeId = row.employeeId?.toString() || row.EmployeeId?.toString() || row['رقم الموظف']?.toString();
+                                    let status = row.status || row.Status || row['الحالة'];
+                                    const notes = row.notes || row.Notes || row['ملاحظات'] || '';
+                                    
+                                    // تحويل التاريخ إلى الصيغة المتوقعة YYYY-MM-DD
+                                    if (date && typeof date === 'number') {
+                                        // إذا كان التاريخ رقمًا (تاريخ Excel)
+                                        const excelDate = new Date(Math.round((date - 25569) * 86400 * 1000));
+                                        date = excelDate.toISOString().split('T')[0];
+                                    } else if (date && typeof date === 'string' && date.includes('/')) {
+                                        // إذا كان التاريخ بصيغة MM/DD/YYYY
+                                        const parts = date.split('/');
+                                        if (parts.length === 3) {
+                                            date = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+                                        }
+                                    }
+                                    
+                                    // تحويل الحالة إلى القيم المتوقعة
+                                    if (status === 'حاضر') {
+                                        status = 'present';
+                                    } else if (status === 'غائب') {
+                                        status = 'absent';
+                                    } else if (status === 'متأخر') {
+                                        status = 'late';
+                                    } else if (status === 'غياب بعذر') {
+                                        status = 'excused';
+                                    }
+                                    
+                                    // التحقق من البيانات الإلزامية
+                                    if (!date || !employeeId || !status) {
+                                        errorCount++;
+                                        continue;
+                                    }
+                                    
+                                    // التحقق من وجود الموظف
+                                    const employee = db.employees.find(emp => emp.id === employeeId);
+                                    if (!employee) {
+                                        errorCount++;
+                                        continue;
+                                    }
+                                    
+                                    // التحقق من وجود سجل بنفس التاريخ للموظف
+                                    const existingRecord = db.attendance.find(
+                                        rec => rec.date === date && rec.employeeId === employeeId
+                                    );
+                                    
+                                    if (existingRecord) {
+                                        await db.updateAttendance(existingRecord.id, { 
+                                            status, 
+                                            notes 
+                                        });
+                                        updatedCount++;
+                                    } else {
+                                        await db.addAttendance({ 
+                                            date, 
+                                            employeeId, 
+                                            status, 
+                                            notes 
+                                        });
+                                        addedCount++;
+                                    }
+                                } catch (err) {
+                                    errorCount++;
+                                    console.error('خطأ في استيراد سجل الحضور:', err);
+                                }
+                            }
+                            
+                            hideLoading();
+                            showNotification(`تم استيراد البيانات: ${addedCount} سجل جديد، ${updatedCount} سجل تم تحديثه، ${errorCount} خطأ`);
+                            
+                            // تحديث القوائم
+                            updateAttendanceList();
+                            updateDashboard();
+                        } catch (err) {
+                            hideLoading();
+                            showNotification('حدث خطأ أثناء استيراد الملف', 'error');
+                            console.error('خطأ في استيراد الملف:', err);
+                        }
+                        
+                        // إعادة تعيين حقل الملف
+                        importFile.value = '';
+                    };
+                    
+                    reader.onerror = function() {
+                        hideLoading();
+                        showNotification('حدث خطأ أثناء قراءة الملف', 'error');
+                        importFile.value = '';
+                    };
+                    
+                    reader.readAsArrayBuffer(file);
+                };
+                
+                importFile.click();
+            });
+            
+            document.getElementById('exportAttendanceBtn').addEventListener('click', () => {
+                try {
+                    const records = db.attendance.map(record => {
+                        const employee = db.employees.find(emp => emp.id === record.employeeId);
+                        
+                        return {
+                            'التاريخ': record.date,
+                            'رقم الموظف': record.employeeId,
+                            'اسم الموظف': employee ? employee.name : '',
+                            'نوع الموظف': employee ? (employee.type === 'supervisor' ? 'مشرف/ة' : 'سائق/ة') : '',
+                            'الحالة': getStatusText(record.status),
+                            'ملاحظات': record.notes || ''
+                        };
+                    });
+                    
+                    exportToExcel(records, 'سجل_الحضور_والغياب');
+                    showNotification('تم تصدير بيانات الحضور بنجاح');
+                } catch (err) {
+                    showNotification('حدث خطأ أثناء تصدير البيانات', 'error');
+                    console.error('خطأ في تصدير سجلات الحضور:', err);
+                }
+            });
+            
+            document.getElementById('exportReportBtn').addEventListener('click', () => {
+                try {
+                    const startDate = document.getElementById('reportStartDate').value;
+                    const endDate = document.getElementById('reportEndDate').value;
+                    const employeeType = document.getElementById('reportEmployeeType').value;
+                    const employeeId = document.getElementById('reportEmployee').value;
+                    
+                    if (!startDate || !endDate) {
+                        throw new Error('يرجى تحديد تاريخ البداية والنهاية');
+                    }
+                    
+                    const filter = {
+                        startDate,
+                        endDate,
+                        employeeType: employeeType !== 'all' ? employeeType : null,
+                        employeeId: employeeId !== 'all' ? employeeId : null
+                    };
+                    
+                    const records = db.getFilteredAttendance(filter).map(record => {
+                        const employee = db.employees.find(emp => emp.id === record.employeeId);
+                        
+                        return {
+                            'التاريخ': record.date,
+                            'رقم الموظف': record.employeeId,
+                            'اسم الموظف': employee ? employee.name : '',
+                            'نوع الموظف': employee ? (employee.type === 'supervisor' ? 'مشرف/ة' : 'سائق/ة') : '',
+                            'الحالة': getStatusText(record.status),
+                            'ملاحظات': record.notes || ''
+                        };
+                    });
+                    
+                    if (records.length === 0) {
+                        throw new Error('لا يوجد بيانات للتصدير');
+                    }
+                    
+                    exportToExcel(records, `تقرير_الحضور_${startDate}_${endDate}`);
+                    showNotification('تم تصدير التقرير بنجاح');
+                } catch (err) {
+                    showNotification(err.message || 'حدث خطأ أثناء تصدير التقرير', 'error');
+                    console.error('خطأ في تصدير التقرير:', err);
+                }
+            });
+            
+            // الاستماع لتغييرات قاعدة البيانات في الوقت الفعلي
+            database.ref('employees').on('child_added', snapshot => {
+                updateEmployeesList();
+                updateEmployeeSelect();
+                updateDashboard();
+            });
+            
+            database.ref('employees').on('child_changed', snapshot => {
+                updateEmployeesList();
+                updateEmployeeSelect();
+                updateAttendanceList(); // تحديث الحضور أيضًا لعرض اسم الموظف المحدث
+                updateDashboard();
+            });
+            
+            database.ref('employees').on('child_removed', snapshot => {
+                updateEmployeesList();
+                updateEmployeeSelect();
+                updateAttendanceList();
+                updateDashboard();
+            });
+            
+            database.ref('attendance').on('child_added', snapshot => {
+                updateAttendanceList();
+                updateDashboard();
+            });
+            
+            database.ref('attendance').on('child_changed', snapshot => {
+                updateAttendanceList();
+                updateDashboard();
+            });
+            
+            database.ref('attendance').on('child_removed', snapshot => {
+                updateAttendanceList();
+                updateDashboard();
+            });
+        });
+    </script>
+</body>
+</html>
